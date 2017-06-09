@@ -13,15 +13,18 @@ import android.view.SurfaceHolder;
 import android.view.View;
 import android.widget.RelativeLayout;
 import org.apache.cordova.LOG;
+import android.view.TextureView.SurfaceTextureListener;
+import android.view.TextureView;
+import android.graphics.SurfaceTexture;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 
-class Preview extends RelativeLayout implements SurfaceHolder.Callback {
+class Preview extends RelativeLayout implements TextureView.SurfaceTextureListener {
   private final String TAG = "Preview";
 
-  CustomSurfaceView mSurfaceView;
+  TextureView mSurfaceView;
   SurfaceHolder mHolder;
   Camera.Size mPreviewSize;
   List<Camera.Size> mSupportedPreviewSizes;
@@ -34,16 +37,56 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
   Preview(Context context) {
     super(context);
 
-    mSurfaceView = new CustomSurfaceView(context);
+    mSurfaceView = new TextureView(context);
+    mSurfaceView.setSurfaceTextureListener(this);
     addView(mSurfaceView);
 
     requestLayout();
+  }
 
-    // Install a SurfaceHolder.Callback so we get notified when the
-    // underlying surface is created and destroyed.
-    mHolder = mSurfaceView.getHolder();
-    mHolder.addCallback(this);
-    mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+  public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+    try {
+      if(mCamera != null) {
+        // Now that the size is known, set up the camera parameters and begin
+        // the preview.
+        mSupportedPreviewSizes = mCamera.getParameters().getSupportedPreviewSizes();
+        if (mSupportedPreviewSizes != null) {
+          mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, width, height);
+        }
+        Camera.Parameters parameters = mCamera.getParameters();
+        parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+        requestLayout();
+        mCamera.setParameters(parameters);
+        mCamera.setPreviewTexture(surface);
+
+        mCamera.startPreview();
+      }
+
+
+      mCamera.setPreviewTexture(surface);
+      mCamera.startPreview();
+    } catch (IOException ioe) {
+      // Something bad happened
+    }
+  }
+
+  public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+    // Ignored, Camera does all the work for us
+  }
+
+  public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+    try {
+      if (mCamera != null) {
+        //mCamera.stopPreview();
+      }
+    } catch (Exception exception) {
+      Log.e(TAG, "Exception caused by surfaceDestroyed()", exception);
+    }
+    return true;
+  }
+
+  public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+    // Invoked every time there's a new Camera preview frame
   }
 
   public void setCamera(Camera camera, int cameraId) {
@@ -213,29 +256,6 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     }
   }
 
-  public void surfaceCreated(SurfaceHolder holder) {
-    // The Surface has been created, acquire the camera and tell it where
-    // to draw.
-    try {
-      if (mCamera != null) {
-        mSurfaceView.setWillNotDraw(false);
-        mCamera.setPreviewDisplay(holder);
-      }
-    } catch (IOException exception) {
-      Log.e(TAG, "IOException caused by setPreviewDisplay()", exception);
-    }
-  }
-
-  public void surfaceDestroyed(SurfaceHolder holder) {
-    // Surface will be destroyed when we return, so stop the preview.
-    try {
-      if (mCamera != null) {
-        mCamera.stopPreview();
-      }
-    } catch (Exception exception) {
-      Log.e(TAG, "Exception caused by surfaceDestroyed()", exception);
-    }
-  }
   private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
     final double ASPECT_TOLERANCE = 0.1;
     double targetRatio = (double) w / h;
@@ -275,23 +295,6 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
 
     Log.d(TAG, "optimal preview size: w: " + optimalSize.width + " h: " + optimalSize.height);
     return optimalSize;
-  }
-
-  public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
-    if(mCamera != null) {
-      // Now that the size is known, set up the camera parameters and begin
-      // the preview.
-      mSupportedPreviewSizes = mCamera.getParameters().getSupportedPreviewSizes();
-      if (mSupportedPreviewSizes != null) {
-        mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, w, h);
-      }
-      Camera.Parameters parameters = mCamera.getParameters();
-      parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
-      requestLayout();
-      //mCamera.setDisplayOrientation(90);
-      mCamera.setParameters(parameters);
-      mCamera.startPreview();
-    }
   }
 
   public void setOneShotPreviewCallback(Camera.PreviewCallback callback) {
